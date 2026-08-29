@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>اسکنر بارکد و شمارنده</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Tahoma,sans-serif;color:#111827}
+  .wrap{max-width:760px;margin:auto;padding:16px 16px 40px}
+  h1{font-size:24px;text-align:center;margin:10px 0 6px}
+  .sub{text-align:center;color:#6b7280;margin:0 0 16px;font-size:14px}
+  .card{background:#fff;border-radius:18px;padding:16px;margin:12px 0;box-shadow:0 2px 10px #00000012}
+  #reader{width:100%;border-radius:14px;overflow:hidden;background:#111}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  button{border:0;border-radius:12px;padding:13px 15px;font-size:16px;font-weight:700;cursor:pointer}
+  .primary{background:#2563eb;color:#fff;flex:1}
+  .danger{background:#dc2626;color:#fff}
+  .gray{background:#e5e7eb;color:#111827}
+  input{width:100%;padding:13px;border:1px solid #d1d5db;border-radius:12px;font-size:16px;margin-top:8px}
+  .label{font-size:13px;color:#6b7280;margin-top:10px}
+  .result{display:none;text-align:center;padding:14px;border-radius:14px;background:#ecfdf5;color:#065f46;margin-top:12px}
+  .big{font-size:28px;font-weight:800}
+  table{width:100%;border-collapse:collapse;margin-top:8px;font-size:14px}
+  th,td{padding:10px 6px;border-bottom:1px solid #e5e7eb;text-align:right;word-break:break-word}
+  th{color:#6b7280;font-size:12px}
+  .qty{font-weight:800;font-size:18px}
+  .empty{text-align:center;color:#6b7280;padding:18px}
+  .hint{font-size:12px;color:#6b7280;line-height:1.7}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📦 اسکنر بارکد</h1>
+  <p class="sub">اسکن کن، نام کالا را وارد کن، تعداد خودکار شمرده می‌شود</p>
+
+  <div class="card">
+    <div id="reader"></div>
+    <div class="row" style="margin-top:12px">
+      <button class="primary" id="startBtn">📷 شروع اسکن</button>
+      <button class="gray" id="stopBtn">⏹ توقف</button>
+    </div>
+    <div class="result" id="result"></div>
+    <p class="hint">در آیفون اجازه دسترسی به Camera را بده. برای اسکن بهتر بارکد را در نور مناسب نگه دار.</p>
+  </div>
+
+  <div class="card">
+    <b>➕ ثبت دستی / نام‌گذاری کالا</b>
+    <div class="label">بارکد</div>
+    <input id="barcodeInput" placeholder="بارکد یا شماره را وارد کن">
+    <div class="label">نام کالا</div>
+    <input id="nameInput" placeholder="مثلاً Coca Cola">
+    <div class="row" style="margin-top:12px">
+      <button class="primary" id="addBtn">ثبت / افزایش تعداد</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row" style="align-items:center;justify-content:space-between">
+      <b>📋 لیست اسکن‌ها</b>
+      <span id="totalLabel">0 آیتم</span>
+    </div>
+    <div id="tableWrap" class="empty">هنوز چیزی اسکن نشده</div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <button class="primary" id="exportBtn">⬇️ خروجی CSV برای Excel</button>
+      <button class="danger" id="clearBtn">🗑 پاک کردن همه</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+<script>
+let items = JSON.parse(localStorage.getItem('barcodeItems') || '{}');
+let scanner = null;
+let scanning = false;
+let lastCode = '';
+let lastScanTime = 0;
+
+function save(){ localStorage.setItem('barcodeItems', JSON.stringify(items)); }
+
+function render(){
+  const keys = Object.keys(items);
+  const total = keys.reduce((s,k)=>s+items[k].qty,0);
+  document.getElementById('totalLabel').textContent = total + ' اسکن';
+  if(!keys.length){
+    document.getElementById('tableWrap').className='empty';
+    document.getElementById('tableWrap').innerHTML='هنوز چیزی اسکن نشده';
+    return;
+  }
+  let html='<table><thead><tr><th>بارکد</th><th>نام کالا</th><th>تعداد</th><th></th></tr></thead><tbody>';
+  keys.forEach(code=>{
+    const x=items[code];
+    html+=`<tr><td>${escapeHtml(code)}</td><td>${escapeHtml(x.name||'بدون نام')}</td><td class="qty">${x.qty}</td><td><button class="gray" style="padding:7px 10px" onclick="removeOne('${encodeURIComponent(code)}')">−1</button></td></tr>`;
+  });
+  html+='</tbody></table>';
+  document.getElementById('tableWrap').className='';
+  document.getElementById('tableWrap').innerHTML=html;
+}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+window.removeOne=function(encoded){
+  const code=decodeURIComponent(encoded);
+  if(!items[code]) return;
+  items[code].qty--;
+  if(items[code].qty<=0) delete items[code];
+  save(); render();
+}
+function addCode(code,name=''){
+  code=String(code).trim();
+  if(!code) return;
+  if(!items[code]) items[code]={name:name.trim()||'بدون نام',qty:0};
+  if(name.trim()) items[code].name=name.trim();
+  items[code].qty++;
+  save(); render();
+  const r=document.getElementById('result');
+  r.style.display='block';
+  r.innerHTML=`<div>✓ اسکن ثبت شد</div><div class="big">${escapeHtml(items[code].name)}</div><div>بارکد: ${escapeHtml(code)} | تعداد: <b>${items[code].qty}</b></div>`;
+  if(navigator.vibrate) navigator.vibrate(80);
+}
+
+document.getElementById('addBtn').onclick=()=>{
+  const code=document.getElementById('barcodeInput').value;
+  const name=document.getElementById('nameInput').value;
+  addCode(code,name);
+  document.getElementById('barcodeInput').value='';
+  document.getElementById('nameInput').value='';
+};
+
+document.getElementById('startBtn').onclick=async()=>{
+  if(scanning) return;
+  scanner=new Html5Qrcode("reader");
+  try{
+    await scanner.start(
+      {facingMode:"environment"},
+      {fps:10, qrbox:{width:280,height:180}, formatsToSupport:[
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.UPC_E,
+        Html5QrcodeSupportedFormats.ITF
+      ]},
+      (decodedText)=>{
+        const now=Date.now();
+        if(decodedText===lastCode && now-lastScanTime<1800) return;
+        lastCode=decodedText; lastScanTime=now;
+        if(items[decodedText]){
+          addCode(decodedText);
+        }else{
+          document.getElementById('barcodeInput').value=decodedText;
+          document.getElementById('nameInput').focus();
+          const r=document.getElementById('result');
+          r.style.display='block';
+          r.innerHTML=`<div class="big">بارکد جدید</div><div>${escapeHtml(decodedText)}</div><div>نام کالا را وارد کن و «ثبت» را بزن.</div>`;
+        }
+      },
+      ()=>{}
+    );
+    scanning=true;
+  }catch(e){ alert('دوربین باز نشد. فایل را از طریق Safari/Chrome و یک سایت امن (HTTPS) باز کن و اجازه Camera بده.'); }
+};
+
+document.getElementById('stopBtn').onclick=async()=>{
+  if(scanner && scanning){
+    try{await scanner.stop(); await scanner.clear();}catch(e){}
+    scanning=false; scanner=null;
+  }
+};
+
+document.getElementById('clearBtn').onclick=()=>{
+  if(confirm('همه لیست پاک شود؟')){
+    items={}; save(); render();
+    document.getElementById('result').style.display='none';
+  }
+};
+
+document.getElementById('exportBtn').onclick=()=>{
+  const rows=[['Barcode','Name','Quantity']];
+  Object.keys(items).forEach(code=>rows.push([code,items[code].name,items[code].qty]));
+  const csv='\uFEFF'+rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download='barcode_inventory.csv'; a.click();
+  URL.revokeObjectURL(url);
+};
+
+render();
+</script>
+</body>
+</html>
